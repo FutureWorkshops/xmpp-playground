@@ -1,5 +1,6 @@
 package com.futureworkshops.xmpp
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Test
 
@@ -15,6 +16,8 @@ class ConnectionManagerTest {
 
     @Test
     fun login() {
-        connectionManager.login(Credentials.ARIS)
+        runBlocking {
+            connectionManager.login(Credentials.ARIS)
+        }
     }
 }
