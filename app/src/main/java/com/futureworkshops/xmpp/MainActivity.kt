@@ -2,6 +2,7 @@ package com.futureworkshops.xmpp
 
 import android.os.Bundle
 import android.support.v7.app.AppCompatActivity
+import android.widget.Toast
 import com.futureworkshops.xmpp.Credentials.Companion.ARIS
 import com.futureworkshops.xmpp.Credentials.Companion.IGOR
 import com.futureworkshops.xmpp.Credentials.Companion.TEST
@@ -13,7 +14,7 @@ import kotlinx.coroutines.launch
 import kotlin.coroutines.CoroutineContext
 
 
-class MainActivity() : AppCompatActivity(), CoroutineScope {
+class MainActivity: AppCompatActivity(), CoroutineScope {
     private val job = Job()
     override val coroutineContext: CoroutineContext
         get() = job + Dispatchers.Main
@@ -42,11 +43,12 @@ class MainActivity() : AppCompatActivity(), CoroutineScope {
     }
 
     private fun login(credentials: Credentials) {
+        val context = this
         launch {
             connectionManager.login(credentials)
+            Toast.makeText(context, "Logged in successfully", Toast.LENGTH_SHORT).show()
         }
     }
-
 
 }
 
