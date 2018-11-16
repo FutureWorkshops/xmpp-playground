@@ -34,5 +34,7 @@ dependencies {
     implementation "org.igniterealtime.smack:smack-tcp:4.3.1"
     implementation "org.igniterealtime.smack:smack-android-extensions:4.3.1"
 
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.0.1'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.0.1'
 
 }
