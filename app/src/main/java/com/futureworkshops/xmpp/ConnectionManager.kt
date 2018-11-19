@@ -2,6 +2,7 @@ package com.futureworkshops.xmpp
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jivesoftware.smack.AbstractXMPPConnection
 import org.jivesoftware.smack.ConnectionConfiguration
 import org.jivesoftware.smack.SASLAuthentication
 import org.jivesoftware.smack.debugger.ConsoleDebugger
@@ -19,7 +20,7 @@ private const val PORT_TCP = 5222
 
 class ConnectionManager {
 
-    suspend fun login(credentials: Credentials):  XMPPTCPConnection {
+    suspend fun loginTCP(credentials: Credentials): AbstractXMPPConnection {
 
         // disable security
         SASLAuthentication.unBlacklistSASLMechanism("PLAIN")
@@ -48,4 +49,8 @@ class ConnectionManager {
 
     }
 
+
+    suspend fun loginWebSockets(credentials : Credentials) : AbstractXMPPConnection {
+        TODO()
+    }
 }

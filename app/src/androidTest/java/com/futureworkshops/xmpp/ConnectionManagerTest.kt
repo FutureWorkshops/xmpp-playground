@@ -7,8 +7,6 @@ import org.junit.Test
 
 import java.util.concurrent.CountDownLatch
 import org.jxmpp.jid.impl.JidCreate
-import org.jxmpp.jid.EntityBareJid
-
 
 
 /*
@@ -24,7 +22,7 @@ class ConnectionManagerTest {
     @Test
     fun loginTest() {
         runBlocking {
-            connectionManager.login(Credentials.ARIS)
+            connectionManager.loginTCP(Credentials.ARIS)
         }
     }
 
@@ -34,8 +32,8 @@ class ConnectionManagerTest {
         val latch = CountDownLatch(2)
 
         runBlocking {
-            val connection1 = connectionManager.login(Credentials.ARIS)
-            val connection2 = connectionManager.login(Credentials.TEST)
+            val connection1 = connectionManager.loginTCP(Credentials.ARIS)
+            val connection2 = connectionManager.loginTCP(Credentials.TEST)
 
 
             val chatManager1 = ChatManager.getInstanceFor(connection1)

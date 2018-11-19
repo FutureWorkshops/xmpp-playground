@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.support.v7.app.AppCompatActivity
 import android.widget.Toast
+import com.futureworkshops.xmpp.ConnectionKeeper.connection
 import com.futureworkshops.xmpp.Credentials.Companion.ARIS
 import com.futureworkshops.xmpp.Credentials.Companion.IGOR
 import com.futureworkshops.xmpp.Credentials.Companion.TEST
@@ -12,6 +13,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import org.jivesoftware.smack.AbstractXMPPConnection
+import org.jivesoftware.smack.tcp.XMPPTCPConnection
 import kotlin.coroutines.CoroutineContext
 
 
@@ -61,7 +64,13 @@ class MainActivity : AppCompatActivity(), CoroutineScope {
 
     private suspend fun login(credentials: Credentials) {
         val context = this
-        val connection = connectionManager.login(credentials)
+        val connection : AbstractXMPPConnection =
+            if (tcpCheckBox.isChecked) {
+                connectionManager.loginTCP(credentials)
+            } else {
+                connectionManager.loginWebSockets(credentials)
+            }
+
         ConnectionKeeper.connection = connection
         Toast.makeText(context, "Logged in successfully", Toast.LENGTH_SHORT).show()
     }
