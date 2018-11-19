@@ -56,7 +56,7 @@ class MainActivity : AppCompatActivity(), CoroutineScope {
     }
 
     private fun goToReceiveActivity() {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        startActivity(Intent(this, ReceiveActivity::class.java))
     }
 
     private suspend fun login(credentials: Credentials) {

@@ -46,7 +46,7 @@ class ConnectionManagerTest {
                 latch.countDown()
             }
 
-            val jid = JidCreate.entityBareFrom("test@localhost.com")
+            val jid = JidCreate.entityBareFrom("test@localhost")
             val chat = chatManager1.chatWith(jid)
             chat.send("Oh hi!")
             latch.countDown()

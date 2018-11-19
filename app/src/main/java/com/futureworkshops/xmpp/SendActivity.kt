@@ -15,7 +15,7 @@ class SendActivity : AppCompatActivity() {
 
 
         val chatManager = ChatManager.getInstanceFor(ConnectionKeeper.connection)
-        val jid = JidCreate.entityBareFrom("test@localhost.com")
+        val jid = JidCreate.entityBareFrom("test@localhost")
         val chat = chatManager.chatWith(jid)
 
 
