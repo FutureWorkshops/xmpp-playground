@@ -15,8 +15,12 @@ import org.jivesoftware.smack.tcp.XMPPTCPConnectionConfiguration
  * Copyright (c) 2018 FutureWorkshops. All rights reserved.
  */
 
-private const val HOST_TCP = "ec2-54-87-229-14.compute-1.amazonaws.com"
+private const val HOST = "ec2-54-87-229-14.compute-1.amazonaws.com"
 private const val PORT_TCP = 5222
+
+private const val PORT_SOCKETS = 5280
+
+
 
 class ConnectionManager {
 
@@ -31,7 +35,7 @@ class ConnectionManager {
             .setUsernameAndPassword(credentials.username, credentials.password)
             .setResource("test")
             .setSecurityMode(ConnectionConfiguration.SecurityMode.disabled) // No TLS for the time being
-            .setHost(HOST_TCP)
+            .setHost(HOST)
             .setXmppDomain("localhost")
             .setPort(PORT_TCP)
             .setDebuggerFactory(ConsoleDebugger.Factory.INSTANCE)
@@ -50,7 +54,19 @@ class ConnectionManager {
     }
 
 
+
     suspend fun loginWebSockets(credentials : Credentials) : AbstractXMPPConnection {
-        TODO()
+        val configBuilder = XMPPTCPConnectionConfiguration.builder()
+            .setUsernameAndPassword(credentials.username, credentials.password)
+            .setResource("test")
+            .setSecurityMode(ConnectionConfiguration.SecurityMode.disabled) // No TLS for the time being
+            .setHost(HOST)
+            .setXmppDomain("localhost")
+            .setPort(PORT_SOCKETS)
+            .setDebuggerFactory(ConsoleDebugger.Factory.INSTANCE)
+
+        val connection = XMPPTCPConnection(configBuilder.build())
+
+        return connection
     }
 }
