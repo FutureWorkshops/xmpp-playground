@@ -55,7 +55,13 @@ class ConnectionManagerTest {
         latch.await()
         Log.d(TAG, "Waited. Bye!")
 
+    }
 
 
+    @Test
+    fun connectWSTest() {
+        runBlocking {
+            connectionManager.loginWebSockets(Credentials.ARIS)
+        }
     }
 }

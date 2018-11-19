@@ -1,5 +1,8 @@
 package com.futureworkshops.xmpp
 
+import com.futureworkshops.xmpp.smack.XMPPWebSocketsConnection
+import com.futureworkshops.xmpp.smack.XMPPWebSocketsConnectionConfiguration
+import com.koushikdutta.async.http.AsyncHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jivesoftware.smack.AbstractXMPPConnection
@@ -56,7 +59,7 @@ class ConnectionManager {
 
 
     suspend fun loginWebSockets(credentials : Credentials) : AbstractXMPPConnection {
-        val configBuilder = XMPPTCPConnectionConfiguration.builder()
+        val configBuilder = XMPPWebSocketsConnectionConfiguration.builder()
             .setUsernameAndPassword(credentials.username, credentials.password)
             .setResource("test")
             .setSecurityMode(ConnectionConfiguration.SecurityMode.disabled) // No TLS for the time being
@@ -65,7 +68,14 @@ class ConnectionManager {
             .setPort(PORT_SOCKETS)
             .setDebuggerFactory(ConsoleDebugger.Factory.INSTANCE)
 
-        val connection = XMPPTCPConnection(configBuilder.build())
+        val connection = XMPPWebSocketsConnection(configBuilder.build())
+
+        withContext(Dispatchers.IO) {
+            // Connect to the server
+            connection.connect()
+            // Log into the server
+//            connection.login()
+        }
 
         return connection
     }
