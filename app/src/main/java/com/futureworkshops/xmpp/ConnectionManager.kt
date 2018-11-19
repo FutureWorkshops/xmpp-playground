@@ -19,7 +19,7 @@ private const val PORT_TCP = 5222
 
 class ConnectionManager {
 
-    suspend fun login(credentials: Credentials) {
+    suspend fun login(credentials: Credentials):  XMPPTCPConnection {
 
         // disable security
         SASLAuthentication.unBlacklistSASLMechanism("PLAIN")
@@ -43,6 +43,8 @@ class ConnectionManager {
             // Log into the server
             connection.login()
         }
+
+        return connection
 
     }
 
