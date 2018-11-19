@@ -21,7 +21,7 @@ import org.jivesoftware.smack.tcp.XMPPTCPConnectionConfiguration
 private const val HOST = "ec2-54-87-229-14.compute-1.amazonaws.com"
 private const val PORT_TCP = 5222
 
-private const val PORT_SOCKETS = 5280
+private const val URI_SOCKETS = "ws://ec2-54-87-229-14.compute-1.amazonaws.com:5280/ws-xmpp"
 
 
 
@@ -63,9 +63,8 @@ class ConnectionManager {
             .setUsernameAndPassword(credentials.username, credentials.password)
             .setResource("test")
             .setSecurityMode(ConnectionConfiguration.SecurityMode.disabled) // No TLS for the time being
-            .setHost(HOST)
             .setXmppDomain("localhost")
-            .setPort(PORT_SOCKETS)
+            .setUri(URI_SOCKETS)
             .setDebuggerFactory(ConsoleDebugger.Factory.INSTANCE)
 
         val connection = XMPPWebSocketsConnection(configBuilder.build())
