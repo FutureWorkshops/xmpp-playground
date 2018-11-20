@@ -2,8 +2,10 @@ package com.futureworkshops.xmpp.smack
 
 import android.util.Log
 import com.koushikdutta.async.http.AsyncHttpClient
+import com.koushikdutta.async.http.WebSocket
 import org.jivesoftware.smack.AbstractXMPPConnection
 import org.jivesoftware.smack.SmackException
+import org.jivesoftware.smack.SynchronizationPoint
 import org.jivesoftware.smack.packet.Nonza
 import org.jivesoftware.smack.packet.Stanza
 import org.jxmpp.jid.parts.Resourcepart
@@ -14,6 +16,8 @@ class XMPPWebSocketsConnection(val configuration: XMPPWebSocketsConnectionConfig
 
     private val TAG = "WS"
 
+    private val socketConnected = SynchronizationPoint<Exception>(this, "Socket connected")
+
     override fun isSecureConnection(): Boolean {
         return false
     }
@@ -21,6 +25,8 @@ class XMPPWebSocketsConnection(val configuration: XMPPWebSocketsConnectionConfig
     override fun sendStanzaInternal(packet: Stanza?) {
         TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
+
+    private var webSocket: WebSocket? = null
 
     override fun connectInternal() {
 
@@ -40,21 +46,30 @@ class XMPPWebSocketsConnection(val configuration: XMPPWebSocketsConnectionConfig
 
     private fun connectUsingConfiguration() {
 
+        socketConnected.init()
+
         AsyncHttpClient.getDefaultInstance()
             .websocket(configuration.uri, "xmpp") { ex, webSocket ->
                 ex?.let {
                     Log.e("WS", "Error while connecting", it)
+                    socketConnected.reportFailure(it)
                     throw SmackException.ConnectionException(it)
                 }
                 webSocket?.let {
                     Log.d(TAG, "Established web socket connection")
+                    this.webSocket = it
+                    socketConnected.reportSuccess()
                 }
             }
 
     }
 
     private fun initConnection() {
+        socketConnected.checkIfSuccessOrWait()
 
+        webSocket!!.let {
+            Log.d(TAG, "Web socket is initialized")
+        }
     }
 
     override fun loginInternal(username: String?, password: String?, resource: Resourcepart?) {
