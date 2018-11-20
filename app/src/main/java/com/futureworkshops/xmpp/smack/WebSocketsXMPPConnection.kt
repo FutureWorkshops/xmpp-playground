@@ -9,7 +9,8 @@ import org.jivesoftware.smack.SynchronizationPoint
 import org.jivesoftware.smack.packet.Nonza
 import org.jivesoftware.smack.packet.Stanza
 import org.jxmpp.jid.parts.Resourcepart
-import java.net.ConnectException
+import java.io.*
+import java.nio.charset.Charset
 
 class XMPPWebSocketsConnection(val configuration: XMPPWebSocketsConnectionConfiguration) :
     AbstractXMPPConnection(configuration) {
@@ -26,7 +27,7 @@ class XMPPWebSocketsConnection(val configuration: XMPPWebSocketsConnectionConfig
         TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
 
-    private var webSocket: WebSocket? = null
+    private lateinit var webSocket: WebSocket
 
     override fun connectInternal() {
 
@@ -67,9 +68,30 @@ class XMPPWebSocketsConnection(val configuration: XMPPWebSocketsConnectionConfig
     private fun initConnection() {
         socketConnected.checkIfSuccessOrWait()
 
-        webSocket!!.let {
-            Log.d(TAG, "Web socket is initialized")
+        initReaderAndWriter()
+    }
+
+    // TODO does this make sense or work at all?
+    private fun initReaderAndWriter() {
+
+        val readerInputStream = PipedInputStream()
+        val readerOutputStream = PipedOutputStream(readerInputStream)
+
+        reader = BufferedReader(InputStreamReader(readerInputStream, "UTF-8"))
+
+        webSocket.setStringCallback {
+            readerOutputStream.write(it.toByteArray(Charset.defaultCharset()))
         }
+
+        val outputStream = ByteArrayOutputStream()
+        // TODO, whatever we send to the socket, we need to write it to this stream
+        val writerOutputStream = BufferedOutputStream(outputStream)
+
+        writer = OutputStreamWriter(writerOutputStream, "UTF-8")
+
+        readerOutputStream.write("HI".toByteArray(Charset.defaultCharset()))
+
+        initDebugger()
     }
 
     override fun loginInternal(username: String?, password: String?, resource: Resourcepart?) {
