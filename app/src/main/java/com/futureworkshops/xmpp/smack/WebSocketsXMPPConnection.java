@@ -1,5 +1,6 @@
 package com.futureworkshops.xmpp.smack;
 
+import android.support.annotation.NonNull;
 import android.util.Log;
 import com.koushikdutta.async.http.AsyncHttpClient;
 import com.koushikdutta.async.http.WebSocket;
@@ -60,12 +61,12 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
 
     @Override
     protected void sendStanzaInternal(Stanza packet) throws SmackException.NotConnectedException, InterruptedException {
-
+        socketWriter.sendStreamElement(packet);
     }
 
     @Override
     public void sendNonza(Nonza element) throws SmackException.NotConnectedException, InterruptedException {
-
+        socketWriter.sendStreamElement(element);
     }
 
     @Override
@@ -109,7 +110,7 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
     private void initConnection() throws InterruptedException, NoResponseException, IOException {
         socketConnected.checkIfSuccessOrWait();
         boolean isFirstInitialization = socketReader == null || socketWriter == null;
-                
+
         initReaderAndWriter();
 
         if (isFirstInitialization) {
@@ -126,23 +127,68 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
         // reader holds what the socket receives (from server)
         // writer holds what we send to the socket
 
+
+        writer = new WebSocketWriter(webSocket);
+
+
         PipedInputStream readerInputStream = new PipedInputStream();
         OutputStream readerOutputStream = new PipedOutputStream(readerInputStream);
-        reader = new BufferedReader(new InputStreamReader(readerInputStream, "UTF-8"));
         webSocket.setStringCallback((String string) -> {
             try {
                 readerOutputStream.write(string.getBytes(Charset.defaultCharset()));
             } catch (IOException e) {
-                e.printStackTrace();
+                e.printStackTrace(); // TODO
             }
         });
-        OutputStream outputStream = new ByteArrayOutputStream();
-        // TODO, whatever we send to the socket, we need to write it to this stream
-        OutputStream writerOutputStream = new BufferedOutputStream(outputStream);
-        writer = new OutputStreamWriter(writerOutputStream, "UTF-8");
-        readerOutputStream.write("HI".getBytes(Charset.defaultCharset()));
+        reader = new BufferedReader(new InputStreamReader(readerInputStream, "UTF-8"));
+
+//        PipedInputStream readerInputStream = new PipedInputStream();
+//        OutputStream readerOutputStream = new PipedOutputStream(readerInputStream);
+//        reader = new BufferedReader(new InputStreamReader(readerInputStream, "UTF-8"));
+//        webSocket.setStringCallback((String string) -> {
+//            try {
+//                readerOutputStream.write(string.getBytes(Charset.defaultCharset()));
+//            } catch (IOException e) {
+//                e.printStackTrace();
+//            }
+//        });
+//        OutputStream outputStream = new ByteArrayOutputStream();
+//        // TODO, whatever we send to the socket, we need to write it to this stream
+//        OutputStream writerOutputStream = new BufferedOutputStream(outputStream);
+//        writer = new OutputStreamWriter(writerOutputStream, "UTF-8");
+//        readerOutputStream.write("HI".getBytes(Charset.defaultCharset()));
+//
+
+
         initDebugger();
     }
+
+    class WebSocketWriter extends Writer {
+        private WebSocket webSocket;
+
+        public WebSocketWriter(WebSocket webSocket) {
+            this.webSocket = webSocket;
+
+        }
+
+        @Override
+        public void write(@NonNull char[] cbuf, int off, int len) throws IOException {
+            char[] a = new char[len];
+            System.arraycopy(cbuf, off, a, 0, len);
+            webSocket.send(String.valueOf(a));
+        }
+
+        @Override
+        public void flush() throws IOException {
+            // TODO - do nothing?
+        }
+
+        @Override
+        public void close() throws IOException {
+            // TODO
+        }
+    }
+
 
     @Override
     protected void loginInternal(String username, String password, Resourcepart resource) throws XMPPException, SmackException, IOException, InterruptedException {
@@ -171,7 +217,7 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
         // case the Exception is a StreamErrorException.
 
         // TODO handle the shutdown
-    //    instantShutdown();
+        //    instantShutdown();
 
         // Notify connection listeners of the error.
         callConnectionClosedOnErrorListener(e);
@@ -350,7 +396,6 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
                 notifyConnectionError(writerException);
             }
         }
-
 
 
         /**

@@ -62,6 +62,8 @@ class ConnectionManagerTest {
     fun connectWSTest() {
         runBlocking {
             connectionManager.loginWebSockets(Credentials.ARIS)
+
+            Thread.sleep(20000)
         }
     }
 }

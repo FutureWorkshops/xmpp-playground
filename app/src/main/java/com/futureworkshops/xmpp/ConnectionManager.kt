@@ -72,7 +72,7 @@ class ConnectionManager {
             // Connect to the server
             connection.connect()
             // Log into the server
-//            connection.login()
+            connection.login()
         }
 
         return connection
