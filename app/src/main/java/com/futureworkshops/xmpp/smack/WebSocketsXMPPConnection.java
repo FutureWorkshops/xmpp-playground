@@ -15,6 +15,7 @@ import org.jivesoftware.smack.packet.StreamOpen;
 import org.jivesoftware.smack.tcp.XMPPTCPConnection;
 import org.jivesoftware.smack.util.ArrayBlockingQueueWithShutdown;
 import org.jivesoftware.smack.util.Async;
+import org.jivesoftware.smack.util.XmlStringBuilder;
 import org.jxmpp.jid.parts.Resourcepart;
 import org.jxmpp.util.XmppStringUtils;
 
@@ -42,6 +43,8 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
             this, "initial open stream element send to server");
 
     private WebSocket webSocket;
+    private SocketReader socketReader;
+    private SocketWriter socketWriter;
 
 
     public WebSocketsXMPPConnection(XMPPWebSocketsConnectionConfiguration config) {
@@ -105,7 +108,16 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
 
     private void initConnection() throws InterruptedException, NoResponseException, IOException {
         socketConnected.checkIfSuccessOrWait();
+        boolean isFirstInitialization = socketReader == null || socketWriter == null;
+                
         initReaderAndWriter();
+
+        if (isFirstInitialization) {
+            socketReader = new SocketReader();
+            socketWriter = new SocketWriter();
+        }
+        socketWriter.init();
+        socketReader.init();
     }
 
     // TODO does this make sense or work at all?
@@ -138,6 +150,30 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
 
     }
 
+
+    /**
+     * Sends out a notification that there was an error with the connection
+     * and closes the connection. Also prints the stack trace of the given exception
+     *
+     * @param e the exception that causes the connection close event.
+     */
+    private synchronized void notifyConnectionError(Exception e) {
+        // Listeners were already notified of the exception, return right here.
+        if ((socketReader == null || socketReader.done) &&
+                (socketWriter == null || socketWriter.done())) return;
+
+        // Closes the connection temporary. A reconnection is possible
+        // Note that a connection listener of XMPPTCPConnection will drop the SM state in
+        // case the Exception is a StreamErrorException.
+
+        // TODO handle the shutdown
+    //    instantShutdown();
+
+        // Notify connection listeners of the error.
+        callConnectionClosedOnErrorListener(e);
+    }
+
+
     class SocketWriter {
         public static final int QUEUE_SIZE = WebSocketsXMPPConnection.QUEUE_SIZE;
 
@@ -155,16 +191,6 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
          */
         protected SynchronizationPoint<NoResponseException> shutdownDone = new SynchronizationPoint<>(
                 WebSocketsXMPPConnection.this, "shutdown completed");
-
-        /**
-         * True if some preconditions are given to start the bundle and defer mechanism.
-         * <p>
-         * This will likely get set to true right after the start of the writer thread, because
-         * {@link #nextStreamElement()} will check if {@link queue} is empty, which is probably the case, and then set
-         * this field to true.
-         * </p>
-         */
-        private boolean shouldBundleAndDefer;
 
 
         /**
@@ -234,12 +260,117 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
 
 
         private void writeStuff() {
+            Exception writerException = null;
+
             try {
                 openStream();
+                initialOpenStreamSend.reportSuccess();
 
-            } catch (Exception ex) {
+                while (!done()) {
+                    Element element = nextStreamElement();
+                    if (element == null) {
+                        continue;
+                    }
 
+                    // TODO skipping the bundle and defer stuff
+
+                    Stanza packet = null;
+                    if (element instanceof Stanza) {
+                        packet = (Stanza) element;
+                    }
+
+
+                    CharSequence elementXml = element.toXML(StreamOpen.CLIENT_NAMESPACE);
+                    if (elementXml instanceof XmlStringBuilder) {
+                        ((XmlStringBuilder) elementXml).write(writer, StreamOpen.CLIENT_NAMESPACE);
+                    } else {
+                        writer.write(elementXml.toString());
+                    }
+
+                    if (queue.isEmpty()) {
+                        writer.flush();
+                    }
+                    if (packet != null) {
+                        firePacketSendingListeners(packet);
+                    }
+                }
+
+
+                if (!instantShutdown) {
+                    // Flush out the rest of the queue.
+                    try {
+                        while (!queue.isEmpty()) {
+                            Element packet = queue.remove();
+                            writer.write(packet.toXML(null).toString());
+                        }
+                        writer.flush();
+                    } catch (Exception e) {
+                        LOGGER.log(Level.WARNING,
+                                "Exception flushing queue during shutdown, ignore and continue",
+                                e);
+                    }
+
+                    // Close the stream.
+                    try {
+                        writer.write("</stream:stream>");
+                        writer.flush();
+                    } catch (Exception e) {
+                        LOGGER.log(Level.WARNING, "Exception writing closing stream element", e);
+                    }
+
+                    // Delete the queue contents (hopefully nothing is left).
+                    queue.clear();
+                }
+                // TODO skipped XEP198 stuff (sm)
+
+                // Do *not* close the writer here, as it will cause the socket
+                // to get closed. But we may want to receive further stanzas
+                // until the closing stream tag is received. The socket will be
+                // closed in shutdown().
+
+
+            } catch (Exception e) {
+                // The exception can be ignored if the the connection is 'done'
+                // or if the it was caused because the socket got closed
+                if (!(done() || queue.isShutdown())) {
+                    writerException = e;
+                } else {
+                    LOGGER.log(Level.FINE, "Ignoring Exception in writePackets()", e);
+                }
+            } finally {
+                LOGGER.fine("Reporting shutdownDone success in writer thread");
+                shutdownDone.reportSuccess();
             }
+            // Delay notifyConnectionError after shutdownDone has been reported in the finally block.
+            if (writerException != null) {
+                notifyConnectionError(writerException);
+            }
+        }
+
+
+
+        /**
+         * Maybe return the next available element from the queue for writing. If the queue is shut down <b>or</b> a
+         * spurious interrupt occurs, <code>null</code> is returned. So it is important to check the 'done' condition in
+         * that case.
+         *
+         * @return the next element for writing or null.
+         */
+        private Element nextStreamElement() {
+//             It is important the we check if the queue is empty before removing an element from it
+//            if (queue.isEmpty()) {
+//                shouldBundleAndDefer = true;
+//            }
+            Element packet = null;
+            try {
+                packet = queue.take();
+            } catch (InterruptedException e) {
+                if (!queue.isShutdown()) {
+                    // Users shouldn't try to interrupt the packet writer thread
+                    LOGGER.log(Level.WARNING, "Writer thread was interrupted. Don't do that. Use disconnect() instead.", e);
+                }
+            }
+            return packet;
         }
 
         /**
@@ -272,6 +403,13 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
 //            }
         }
 
+    }
+
+    private class SocketReader {
+        public boolean done;
+
+        public void init() {
+        }
     }
 }
 
