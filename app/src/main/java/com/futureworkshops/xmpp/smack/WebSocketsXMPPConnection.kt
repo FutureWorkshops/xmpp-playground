@@ -71,8 +71,13 @@ class XMPPWebSocketsConnection(val configuration: XMPPWebSocketsConnectionConfig
         initReaderAndWriter()
     }
 
-    // TODO does this make sense or work at all?
+
+
+    // TODO does this make sense or does it work at all? It is important to get this right, so that
+    // we can see all the socket traffic in the console, like it does in the TCP case.
     private fun initReaderAndWriter() {
+        // reader holds what the socket receives (from server)
+        // writer holds what we send to the socket
 
         val readerInputStream = PipedInputStream()
         val readerOutputStream = PipedOutputStream(readerInputStream)
@@ -84,7 +89,7 @@ class XMPPWebSocketsConnection(val configuration: XMPPWebSocketsConnectionConfig
         }
 
         val outputStream = ByteArrayOutputStream()
-        // TODO, whatever we send to the socket, we need to write it to this stream
+        // TODO, whatever we send to the socket, we need to write it to this stream -
         val writerOutputStream = BufferedOutputStream(outputStream)
 
         writer = OutputStreamWriter(writerOutputStream, "UTF-8")
