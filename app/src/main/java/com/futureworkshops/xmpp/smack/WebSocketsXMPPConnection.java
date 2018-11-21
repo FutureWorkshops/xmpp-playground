@@ -44,8 +44,8 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
             this, "initial open stream element send to server");
 
     private WebSocket webSocket;
-    private SocketReader socketReader;
-    private SocketWriter socketWriter;
+    private PacketReader packetReader;
+    private PacketWriter packetWriter;
 
 
     public WebSocketsXMPPConnection(XMPPWebSocketsConnectionConfiguration config) {
@@ -61,12 +61,12 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
 
     @Override
     protected void sendStanzaInternal(Stanza packet) throws SmackException.NotConnectedException, InterruptedException {
-        socketWriter.sendStreamElement(packet);
+        packetWriter.sendStreamElement(packet);
     }
 
     @Override
     public void sendNonza(Nonza element) throws SmackException.NotConnectedException, InterruptedException {
-        socketWriter.sendStreamElement(element);
+        packetWriter.sendStreamElement(element);
     }
 
     @Override
@@ -109,16 +109,16 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
 
     private void initConnection() throws InterruptedException, NoResponseException, IOException {
         socketConnected.checkIfSuccessOrWait();
-        boolean isFirstInitialization = socketReader == null || socketWriter == null;
+        boolean isFirstInitialization = packetReader == null || packetWriter == null;
 
         initReaderAndWriter();
 
         if (isFirstInitialization) {
-            socketReader = new SocketReader();
-            socketWriter = new SocketWriter();
+            packetReader = new PacketReader();
+            packetWriter = new PacketWriter();
         }
-        socketWriter.init();
-        socketReader.init();
+        packetWriter.init();
+        packetReader.init();
     }
 
     // TODO does this make sense or does it work at all? It is important to get this right, so that
@@ -131,33 +131,19 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
         writer = new WebSocketWriter(webSocket);
 
 
+        // For the reader, we first create an OutputStream where we copy everything we receive from the socket.
+        // Then we convert this into an InputStream through the use of pipes.
         PipedInputStream readerInputStream = new PipedInputStream();
         OutputStream readerOutputStream = new PipedOutputStream(readerInputStream);
         webSocket.setStringCallback((String string) -> {
             try {
+                Log.d(TAG, "Socket received: "  + string);
                 readerOutputStream.write(string.getBytes(Charset.defaultCharset()));
             } catch (IOException e) {
                 e.printStackTrace(); // TODO
             }
         });
         reader = new BufferedReader(new InputStreamReader(readerInputStream, "UTF-8"));
-
-//        PipedInputStream readerInputStream = new PipedInputStream();
-//        OutputStream readerOutputStream = new PipedOutputStream(readerInputStream);
-//        reader = new BufferedReader(new InputStreamReader(readerInputStream, "UTF-8"));
-//        webSocket.setStringCallback((String string) -> {
-//            try {
-//                readerOutputStream.write(string.getBytes(Charset.defaultCharset()));
-//            } catch (IOException e) {
-//                e.printStackTrace();
-//            }
-//        });
-//        OutputStream outputStream = new ByteArrayOutputStream();
-//        // TODO, whatever we send to the socket, we need to write it to this stream
-//        OutputStream writerOutputStream = new BufferedOutputStream(outputStream);
-//        writer = new OutputStreamWriter(writerOutputStream, "UTF-8");
-//        readerOutputStream.write("HI".getBytes(Charset.defaultCharset()));
-//
 
 
         initDebugger();
@@ -209,8 +195,8 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
      */
     private synchronized void notifyConnectionError(Exception e) {
         // Listeners were already notified of the exception, return right here.
-        if ((socketReader == null || socketReader.done) &&
-                (socketWriter == null || socketWriter.done())) return;
+        if ((packetReader == null || packetReader.done) &&
+                (packetWriter == null || packetWriter.done())) return;
 
         // Closes the connection temporary. A reconnection is possible
         // Note that a connection listener of XMPPTCPConnection will drop the SM state in
@@ -224,7 +210,8 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
     }
 
 
-    class SocketWriter {
+    // Well, there are no "packets", but leaving this name same as in the TCP case, also because I also have a WebSocketWriter.
+    class PacketWriter {
         public static final int QUEUE_SIZE = WebSocketsXMPPConnection.QUEUE_SIZE;
 
         private final ArrayBlockingQueueWithShutdown<Element> queue = new ArrayBlockingQueueWithShutdown<>(
@@ -454,7 +441,8 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
 
     }
 
-    private class SocketReader {
+    // Well, there are no "packets", but leaving this name same as in the TCP case, also for consistency with the reader
+    private class PacketReader {
         public boolean done;
 
         public void init() {
