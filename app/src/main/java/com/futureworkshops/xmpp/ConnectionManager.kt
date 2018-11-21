@@ -1,8 +1,7 @@
 package com.futureworkshops.xmpp
 
-import com.futureworkshops.xmpp.smack.XMPPWebSocketsConnection
+import com.futureworkshops.xmpp.smack.WebSocketsXMPPConnection
 import com.futureworkshops.xmpp.smack.XMPPWebSocketsConnectionConfiguration
-import com.koushikdutta.async.http.AsyncHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jivesoftware.smack.AbstractXMPPConnection
@@ -67,7 +66,7 @@ class ConnectionManager {
             .setUri(URI_SOCKETS)
             .setDebuggerFactory(ConsoleDebugger.Factory.INSTANCE)
 
-        val connection = XMPPWebSocketsConnection(configBuilder.build())
+        val connection = WebSocketsXMPPConnection(configBuilder.build())
 
         withContext(Dispatchers.IO) {
             // Connect to the server
