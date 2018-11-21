@@ -120,8 +120,12 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
         socketReader.init();
     }
 
-    // TODO does this make sense or work at all?
+    // TODO does this make sense or does it work at all? It is important to get this right, so that
+    // we can see all the socket traffic in the console, like it does in the TCP case.
     private void initReaderAndWriter() throws IOException {
+        // reader holds what the socket receives (from server)
+        // writer holds what we send to the socket
+
         PipedInputStream readerInputStream = new PipedInputStream();
         OutputStream readerOutputStream = new PipedOutputStream(readerInputStream);
         reader = new BufferedReader(new InputStreamReader(readerInputStream, "UTF-8"));
