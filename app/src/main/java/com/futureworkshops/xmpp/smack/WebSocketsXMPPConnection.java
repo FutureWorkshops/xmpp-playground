@@ -9,16 +9,18 @@ import org.jivesoftware.smack.SmackException;
 import org.jivesoftware.smack.SmackException.NoResponseException;
 import org.jivesoftware.smack.SynchronizationPoint;
 import org.jivesoftware.smack.XMPPException;
-import org.jivesoftware.smack.packet.Element;
-import org.jivesoftware.smack.packet.Nonza;
-import org.jivesoftware.smack.packet.Stanza;
-import org.jivesoftware.smack.packet.StreamOpen;
+import org.jivesoftware.smack.XMPPException.StreamErrorException;
+import org.jivesoftware.smack.packet.*;
+import org.jivesoftware.smack.sasl.packet.SaslStreamElements;
 import org.jivesoftware.smack.tcp.XMPPTCPConnection;
 import org.jivesoftware.smack.util.ArrayBlockingQueueWithShutdown;
 import org.jivesoftware.smack.util.Async;
+import org.jivesoftware.smack.util.PacketParserUtils;
 import org.jivesoftware.smack.util.XmlStringBuilder;
 import org.jxmpp.jid.parts.Resourcepart;
 import org.jxmpp.util.XmppStringUtils;
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserException;
 
 import java.io.*;
 import java.nio.charset.Charset;
@@ -68,6 +70,12 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
     public void sendNonza(Nonza element) throws SmackException.NotConnectedException, InterruptedException {
         packetWriter.sendStreamElement(element);
     }
+    /**
+     * A synchronization point which is successful if this connection has received the closing
+     * stream element from the remote end-point, i.e. the server.
+     */
+    private final SynchronizationPoint<Exception> closingStreamReceived = new SynchronizationPoint<>(
+            this, "stream closing element received");
 
     @Override
     public boolean isUsingCompression() {
@@ -149,6 +157,35 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
         initDebugger();
     }
 
+    /**
+     * Resets the parser using the latest connection's reader. Resetting the parser is necessary
+     * when the plain connection has been secured or when a new opening stream element is going
+     * to be sent by the server.
+     *
+     * @throws SmackException if the parser could not be reset.
+     * @throws InterruptedException
+     */
+    void openStream() throws SmackException, InterruptedException {
+        // If possible, provide the receiving entity of the stream open tag, i.e. the server, as much information as
+        // possible. The 'to' attribute is *always* available. The 'from' attribute if set by the user and no external
+        // mechanism is used to determine the local entity (user). And the 'id' attribute is available after the first
+        // response from the server (see e.g. RFC 6120 § 9.1.1 Step 2.)
+        CharSequence to = getXMPPServiceDomain();
+        CharSequence from = null;
+        CharSequence localpart = config.getUsername();
+        if (localpart != null) {
+            from = XmppStringUtils.completeJidFrom(localpart, to);
+        }
+        String id = getStreamId();
+        sendNonza(new StreamOpen(to, from, id));
+        try {
+            packetReader.parser = PacketParserUtils.newXmppParser(reader);
+        }
+        catch (XmlPullParserException e) {
+            throw new SmackException(e);
+        }
+    }
+
     class WebSocketWriter extends Writer {
         private WebSocket webSocket;
 
@@ -210,7 +247,7 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
     }
 
 
-    // Well, there are no "packets", but leaving this name same as in the TCP case, also because I also have a WebSocketWriter.
+    // Well, there are no "packets", but leaving the same name as in the TCP case, also because I also have a WebSocketWriter.
     class PacketWriter {
         public static final int QUEUE_SIZE = WebSocketsXMPPConnection.QUEUE_SIZE;
 
@@ -430,22 +467,194 @@ public class WebSocketsXMPPConnection extends AbstractXMPPConnection {
             }
             String id = getStreamId();
             sendNonza(new StreamOpen(to, from, id));
-//            try {
-            // TODO wtf is this doing here? anyway, is there an equivalent operation we need to do?
-//                packetReader.parser = PacketParserUtils.newXmppParser(reader);
-//            }
-//            catch (XmlPullParserException e) {
-//                throw new SmackException(e);
-//            }
+            try {
+                packetReader.parser = PacketParserUtils.newXmppParser(reader);
+            }
+            catch (XmlPullParserException e) {
+                throw new SmackException(e);
+            }
         }
 
     }
 
-    // Well, there are no "packets", but leaving this name same as in the TCP case, also for consistency with the reader
-    private class PacketReader {
-        public boolean done;
+    // Well, there are no "packets", but leaving the same name as in the TCP case, also for consistency with the reader
 
-        public void init() {
+    protected class PacketReader {
+
+        XmlPullParser parser;
+
+        private volatile boolean done;
+
+        /**
+         * Initializes the reader in order to be used. The reader is initialized during the
+         * first connection and when reconnecting due to an abruptly disconnection.
+         */
+        void init() {
+            done = false;
+
+            Async.go(new Runnable() {
+                @Override
+                public void run() {
+                    parsePackets();
+                }
+            }, "Smack Reader (" + getConnectionCounter() + ")");
+        }
+
+        /**
+         * Shuts the stanza reader down. This method simply sets the 'done' flag to true.
+         */
+        void shutdown() {
+            done = true;
+        }
+
+        /**
+         * Parse top-level packets in order to process them further.
+         */
+        private void parsePackets() {
+            try {
+                initialOpenStreamSend.checkIfSuccessOrWait();
+                int eventType = parser.getEventType();
+                while (!done) {
+                    switch (eventType) {
+                        case XmlPullParser.START_TAG:
+                            final String name = parser.getName();
+                            switch (name) {
+                                case Message.ELEMENT:
+                                case IQ.IQ_ELEMENT:
+                                case Presence.ELEMENT:
+                                    try {
+                                        parseAndProcessStanza(parser);
+                                    } finally {
+//                                        clientHandledStanzasCount = SMUtils.incrementHeight(clientHandledStanzasCount);
+                                    }
+                                    break;
+                                case "stream":
+                                    // We found an opening stream.
+                                    if ("jabber:client".equals(parser.getNamespace(null))) {
+                                        streamId = parser.getAttributeValue("", "id");
+                                        String reportedServerDomain = parser.getAttributeValue("", "from");
+                                        assert (config.getXMPPServiceDomain().equals(reportedServerDomain));
+                                    }
+                                    break;
+                                case "error":
+                                    StreamError streamError = PacketParserUtils.parseStreamError(parser);
+                                    saslFeatureReceived.reportFailure(new StreamErrorException(streamError));
+                                    // Mark the tlsHandled sync point as success, we will use the saslFeatureReceived sync
+                                    // point to report the error, which is checked immediately after tlsHandled in
+                                    // connectInternal().
+                                    tlsHandled.reportSuccess();
+                                    throw new StreamErrorException(streamError);
+                                case "features":
+                                    parseFeatures(parser);
+                                    break;
+                                case "proceed":
+                                    try {
+                                        // Secure the connection by negotiating TLS
+                                        // TODO
+//                                        proceedTLSReceived();
+                                        // Send a new opening stream to the server
+//                                        openStream();
+                                    }
+                                    catch (Exception e) {
+                                        SmackException smackException = new SmackException(e);
+                                        tlsHandled.reportFailure(smackException);
+                                        throw e;
+                                    }
+                                    break;
+                                case "failure":
+                                    String namespace = parser.getNamespace(null);
+                                    switch (namespace) {
+                                        case "urn:ietf:params:xml:ns:xmpp-tls":
+                                            // TLS negotiation has failed. The server will close the connection
+                                            // TODO Parse failure stanza
+                                            throw new SmackException("TLS negotiation has failed");
+                                        case "http://jabber.org/protocol/compress":
+                                            // Stream compression has been denied. This is a recoverable
+                                            // situation. It is still possible to authenticate and
+                                            // use the connection but using an uncompressed connection
+                                            // TODO Parse failure stanza
+//                                            compressSyncPoint.reportFailure(new SmackException(
+//                                                    "Could not establish compression"));
+                                            break;
+                                        case SaslStreamElements.NAMESPACE:
+                                            // SASL authentication has failed. The server may close the connection
+                                            // depending on the number of retries
+                                            final SaslStreamElements.SASLFailure failure = PacketParserUtils.parseSASLFailure(parser);
+                                            getSASLAuthentication().authenticationFailed(failure);
+                                            break;
+                                    }
+                                    break;
+                                case SaslStreamElements.Challenge.ELEMENT:
+                                    // The server is challenging the SASL authentication made by the client
+                                    String challengeData = parser.nextText();
+                                    getSASLAuthentication().challengeReceived(challengeData);
+                                    break;
+                                case SaslStreamElements.Success.ELEMENT:
+                                    SaslStreamElements.Success success = new SaslStreamElements.Success(parser.nextText());
+                                    // We now need to bind a resource for the connection
+                                    // Open a new stream and wait for the response
+                                    openStream();
+                                    // The SASL authentication with the server was successful. The next step
+                                    // will be to bind the resource
+                                    getSASLAuthentication().authenticated(success);
+                                    break;
+
+                                default:
+                                    LOGGER.warning("Unknown top level stream element: " + name);
+                                    break;
+                            }
+                            break;
+                        case XmlPullParser.END_TAG:
+                            final String endTagName = parser.getName();
+                            if ("stream".equals(endTagName)) {
+                                if (!parser.getNamespace().equals("http://etherx.jabber.org/streams")) {
+                                    LOGGER.warning(WebSocketsXMPPConnection.this +  " </stream> but different namespace " + parser.getNamespace());
+                                    break;
+                                }
+
+                                // Check if the queue was already shut down before reporting success on closing stream tag
+                                // received. This avoids a race if there is a disconnect(), followed by a connect(), which
+                                // did re-start the queue again, causing this writer to assume that the queue is not
+                                // shutdown, which results in a call to disconnect().
+                                final boolean queueWasShutdown = packetWriter.queue.isShutdown();
+                                closingStreamReceived.reportSuccess();
+
+                                if (queueWasShutdown) {
+                                    // We received a closing stream element *after* we initiated the
+                                    // termination of the session by sending a closing stream element to
+                                    // the server first
+                                    return;
+                                } else {
+                                    // We received a closing stream element from the server without us
+                                    // sending a closing stream element first. This means that the
+                                    // server wants to terminate the session, therefore disconnect
+                                    // the connection
+                                    LOGGER.info(WebSocketsXMPPConnection.this
+                                            + " received closing </stream> element."
+                                            + " Server wants to terminate the connection, calling disconnect()");
+                                    disconnect();
+                                }
+                            }
+                            break;
+                        case XmlPullParser.END_DOCUMENT:
+                            // END_DOCUMENT only happens in an error case, as otherwise we would see a
+                            // closing stream element before.
+                            throw new SmackException(
+                                    "Parser got END_DOCUMENT event. This could happen e.g. if the server closed the connection without sending a closing stream element");
+                    }
+                    eventType = parser.next();
+                }
+            }
+            catch (Exception e) {
+                closingStreamReceived.reportFailure(e);
+                // The exception can be ignored if the the connection is 'done'
+                // or if the it was caused because the socket got closed
+                if (!(done || packetWriter.queue.isShutdown())) {
+                    // Close the connection and notify connection listeners of the
+                    // error.
+                    notifyConnectionError(e);
+                }
+            }
         }
     }
 }
